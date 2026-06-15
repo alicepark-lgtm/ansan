@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>안산시 생생 맛집 지도</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- PapaParse for CSV Parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  
+  <!-- FontAwesome for Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  
+  <!-- Custom Google Font (Pretendard-like Inter stack) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans KR', sans-serif;
+    }
+    /* Smooth Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    /* Map Popup Customization */
+    .leaflet-popup-content-wrapper {
+      border-radius: 12px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+      padding: 2px;
+    }
+    .leaflet-popup-tip {
+      background: white;
+    }
+    /* Custom pulsing effect for AI thinking */
+    @keyframes ai-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.05); }
+    }
+    .ai-loading {
+      animation: ai-pulse 1.8s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col overflow-hidden">
+
+  <!-- App Header -->
+  <header class="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white shadow-lg z-20 shrink-0">
+    <div class="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="bg-white text-emerald-600 p-2 rounded-xl shadow-md flex items-center justify-center">
+          <i class="fa-solid fa-map-location-dot text-2xl"></i>
+        </div>
+        <div>
+          <h1 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
+            안산시 생생 맛집 지도
+            <span class="bg-amber-400 text-slate-900 text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">Official Hub</span>
+          </h1>
+          <p class="text-xs text-teal-100 font-medium">안산시 단원구·상록구 명품 맛집 데이터베이스 & AI 미식플래너</p>
+        </div>
+      </div>
+      
+      <!-- Stats Summary -->
+      <div class="flex items-center gap-2 sm:gap-4 text-xs font-semibold">
+        <div class="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10">
+          <span class="text-teal-200">총 맛집:</span>
+          <span id="stat-total" class="text-white text-sm font-bold ml-1">0개</span>
+        </div>
+        <div class="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10">
+          <span class="text-emerald-200">단원구:</span>
+          <span id="stat-danwon" class="text-white text-sm font-bold ml-1">0개</span>
+        </div>
+        <div class="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10">
+          <span class="text-cyan-200">상록구:</span>
+          <span id="stat-sangrok" class="text-white text-sm font-bold ml-1">0개</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Application Body -->
+  <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+    
+    <!-- Toast Notification (Replaces window.alert) -->
+    <div id="custom-toast" class="fixed top-18 right-4 z-50 transform translate-y-10 opacity-0 pointer-events-none transition-all duration-300 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700">
+      <div id="toast-icon-bg" class="bg-emerald-500 text-white p-1.5 rounded-lg">
+        <i id="toast-icon" class="fa-solid fa-circle-check"></i>
+      </div>
+      <span id="toast-msg" class="text-sm font-medium">알림 메시지</span>
+    </div>
+
+    <!-- Sidebar Left: Filters, CSV Loader, AI Planner & List -->
+    <section class="w-full md:w-[420px] bg-white border-r border-slate-200 shadow-md flex flex-col overflow-hidden shrink-0 z-10">
+      
+      <!-- Filters Panel -->
+      <div class="p-4 border-b border-slate-100 bg-slate-50/50 space-y-3 shrink-0">
+        <!-- Search bar -->
+        <div class="relative">
+          <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+            <i class="fa-solid fa-magnifying-glass"></i>
+          </span>
+          <input type="text" id="search-input" placeholder="식당 이름 또는 설명 검색..." class="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all placeholder:text-slate-400" />
+        </div>
+
+        <!-- 1. Region Selector -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block">📍 지역 선택</label>
+          <div class="grid grid-cols-3 gap-1">
+            <button onclick="filterRegion('all')" id="btn-region-all" class="filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white border border-emerald-600 shadow-sm transition-all">전체</button>
+            <button onclick="filterRegion('단원구')" id="btn-region-danwon" class="filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all">단원구</button>
+            <button onclick="filterRegion('상록구')" id="btn-region-sangrok" class="filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all">상록구</button>
+          </div>
+        </div>
+
+        <!-- 2. Category Selector -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block">🍔 음식 분류</label>
+          <div class="flex flex-wrap gap-1">
+            <button onclick="filterCategory('all')" class="filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-800 text-white transition-all shadow-sm" data-cat="all">전체</button>
+            <button onclick="filterCategory('한식')" class="filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all" data-cat="한식">🔥 한식</button>
+            <button onclick="filterCategory('양식')" class="filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all" data-cat="양식">🍕 양식</button>
+            <button onclick="filterCategory('중식')" class="filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all" data-cat="중식">🍜 중식</button>
+            <button onclick="filterCategory('횟집·일식')" class="filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all" data-cat="횟집·일식">🍣 횟집/일식</button>
+            <button onclick="filterCategory('기타')" class="filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all" data-cat="기타">☕ 카페/기타</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CSV Upload Area -->
+      <div class="p-3 border-b border-slate-100 bg-amber-50/20 shrink-0">
+        <div class="relative border-2 border-dashed border-slate-200 rounded-xl p-2 bg-white hover:bg-amber-50/50 hover:border-amber-400 transition-all cursor-pointer flex flex-col items-center justify-center text-center group" id="drop-zone">
+          <input type="file" id="csv-file-input" accept=".csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          <div class="flex items-center gap-2">
+            <span class="text-amber-500 bg-amber-50 p-1.5 rounded-lg group-hover:scale-105 transition-transform">
+              <i class="fa-solid fa-file-csv text-lg"></i>
+            </span>
+            <div class="text-left">
+              <p class="text-xs font-bold text-slate-700">안산 맛집 CSV 파일 업로드</p>
+              <p class="text-[10px] text-slate-400">클릭하거나 여기에 파일을 드롭해 매핑하세요</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ✨ AI Course Planner Section -->
+      <div class="p-4 border-b border-slate-100 bg-emerald-50/30 shrink-0 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-600"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+            <h3 class="text-xs font-black text-emerald-800 uppercase tracking-wider">AI 추천 미식 코스 설계</h3>
+          </div>
+          <span class="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">Gemini 2.5</span>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-[9px] font-bold text-slate-400">👥 동반자 구성</label>
+            <select id="ai-companion" class="w-full mt-0.5 p-1.5 border border-slate-200 bg-white text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500">
+              <option value="가족 외식 및 어르신과 함께">👨‍👩‍👧‍👦 가족 동반</option>
+              <option value="연인과 오붓한 데이트">👩‍❤️‍👨 데이트 코스</option>
+              <option value="친구들과 활기찬 미식 모임">🍻 친구 모임</option>
+              <option value="혼자 즐기는 진정한 혼밥 투어">🎒 나홀로 투어</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-[9px] font-bold text-slate-400">🏷️ 코스 테마</label>
+            <select id="ai-theme" class="w-full mt-0.5 p-1.5 border border-slate-200 bg-white text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500">
+              <option value="자극적이지 않고 건강한 보양식 탐방">🌿 웰빙 및 건강식</option>
+              <option value="가성비와 푸짐한 현지인 로컬 감성">💰 가성비·노포 느낌</option>
+              <option value="기념일에 어울리는 세련되고 로맨틱한 코스">✨ 세련·특별한 날</option>
+              <option value="해안 경치를 함께 즐기는 드라이브 미식">🚗 힐링·대부도 연계</option>
+            </select>
+          </div>
+        </div>
+
+        <button onclick="generateAICourse()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> ✨ AI 맞춤 코스 만들기
+        </button>
+      </div>
+
+      <!-- List Area -->
+      <div class="flex-1 overflow-y-auto" id="list-container">
+        <div class="p-3 bg-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center">
+          <span>📋 맛집 목록 (<span id="filtered-count">0</span>개)</span>
+          <button onclick="resetAllFilters()" class="text-emerald-600 hover:text-emerald-700 hover:underline"><i class="fa-solid fa-rotate-left mr-0.5"></i> 필터 리셋</button>
+        </div>
+        <div id="restaurant-list" class="divide-y divide-slate-100">
+          <!-- Dynamic restaurant items injected here -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Map View Container -->
+    <section class="flex-1 h-full relative">
+      <!-- Leaflet Map placeholder -->
+      <div id="map" class="w-full h-full z-0 bg-slate-200"></div>
+
+      <!-- Quick Move Navigation Bar on Map -->
+      <div class="absolute top-4 left-14 z-[1000] bg-white/90 backdrop-blur-md px-3 py-2 rounded-xl shadow-xl border border-slate-200 hidden sm:flex items-center gap-1">
+        <span class="text-xs font-bold text-slate-500 mr-2"><i class="fa-solid fa-map-pin text-rose-500"></i> 빠른 이동</span>
+        <button onclick="panToAnsan()" class="px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-lg transition-all">안산시청</button>
+        <button onclick="panToDanwon()" class="px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-lg transition-all">단원구</button>
+        <button onclick="panToSangrok()" class="px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-lg transition-all">상록구</button>
+        <button onclick="panToDaebudo()" class="px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-lg transition-all">대부도</button>
+      </div>
+
+      <!-- ✨ AI Response Modal / Overlay for Tour Courses -->
+      <div id="ai-course-modal" class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85%] flex flex-col overflow-hidden border border-slate-200">
+          <div class="p-5 bg-gradient-to-r from-emerald-700 to-teal-700 text-white flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-wand-magic-sparkles text-amber-300 text-xl animate-bounce"></i>
+              <div>
+                <h3 class="font-extrabold text-base leading-tight">✨ AI 추천 투어 계획표</h3>
+                <p class="text-[10px] text-teal-100" id="ai-course-subtitle">안산 맛집 데이터 기반 최적 맞춤 동선</p>
+              </div>
+            </div>
+            <button onclick="closeCourseModal()" class="text-white/80 hover:text-white text-xl">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          
+          <div class="p-5 overflow-y-auto space-y-4 text-sm flex-1 leading-relaxed text-slate-700" id="ai-course-content">
+            <!-- Loading state / content injected here -->
+          </div>
+
+          <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+            <span class="text-[10px] text-slate-400 font-semibold"><i class="fa-regular fa-lightbulb"></i> 매장 위치는 지도를 참조해 주세요.</span>
+            <button onclick="closeCourseModal()" class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all">확인 완료</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Restaurant Detail Overlay (Drawer) -->
+      <div id="detail-drawer" class="absolute bottom-4 right-4 z-[1000] w-[385px] max-w-[calc(100vw-32px)] bg-white rounded-2xl shadow-2xl border border-slate-200 transform translate-y-10 opacity-0 pointer-events-none transition-all duration-300 flex flex-col overflow-hidden max-h-[85%] sm:max-h-[680px]">
+        <!-- Detail Header -->
+        <div class="p-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white relative shrink-0">
+          <button onclick="closeDetailDrawer()" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-all text-xl">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+          <div class="flex items-center gap-2 mb-1.5">
+            <span id="detail-category" class="bg-amber-400 text-slate-900 text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider">한식</span>
+            <span id="detail-district" class="bg-slate-700 text-slate-300 text-[10px] font-semibold px-2 py-0.5 rounded-full">단원구</span>
+          </div>
+          <h3 id="detail-name" class="text-xl font-extrabold tracking-tight text-white mb-1">식당이름</h3>
+          <p id="detail-summary" class="text-xs text-slate-300 font-medium line-clamp-2">식당 대표 한줄 소개 글이 들어갑니다.</p>
+        </div>
+
+        <!-- Detail Body (Scrollable) -->
+        <div class="p-5 overflow-y-auto space-y-4 text-sm flex-1">
+          <!-- Description Quotation -->
+          <div class="border-l-4 border-emerald-500 pl-3 py-1 bg-slate-50 italic text-slate-600 rounded-r-lg text-xs">
+            "<span id="detail-desc">상세 설명이 포함되어 매장의 매력을 온전히 전합니다.</span>"
+          </div>
+
+          <!-- Feature List -->
+          <div class="space-y-3">
+            <div class="flex items-start gap-3">
+              <span class="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-phone"></i>
+              </span>
+              <div>
+                <p class="text-[10px] font-bold text-slate-400">전화번호</p>
+                <a id="detail-phone" href="tel:031-123-4567" class="text-emerald-600 font-bold hover:underline">031-123-4567</a>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <span class="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-map-location-dot"></i>
+              </span>
+              <div class="flex-1">
+                <p class="text-[10px] font-bold text-slate-400">주소지</p>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <span id="detail-address" class="text-slate-700 font-medium text-xs break-all">주소 정보가 노출됩니다.</span>
+                  <button onclick="copyAddress()" class="text-slate-400 hover:text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[10px] transition-all font-semibold shrink-0" title="주소 복사">
+                    <i class="fa-regular fa-copy"></i> 복사
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 pt-1">
+              <div class="flex items-start gap-2.5">
+                <span class="w-6 h-6 rounded bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 text-xs">
+                  <i class="fa-solid fa-chair"></i>
+                </span>
+                <div>
+                  <p class="text-[9px] font-bold text-slate-400">좌석 규모</p>
+                  <span id="detail-seats" class="text-xs font-semibold text-slate-700">120석</span>
+                </div>
+              </div>
+              
+              <div class="flex items-start gap-2.5">
+                <span class="w-6 h-6 rounded bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 text-xs">
+                  <i class="fa-solid fa-car"></i>
+                </span>
+                <div>
+                  <p class="text-[9px] font-bold text-slate-400">주차 편의</p>
+                  <span id="detail-parking" class="text-xs font-semibold text-slate-700">무료 가능</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3 pt-1">
+              <span class="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-calendar-xmark"></i>
+              </span>
+              <div>
+                <p class="text-[10px] font-bold text-slate-400">휴무일 & 정기휴일</p>
+                <span id="detail-holiday" class="text-slate-700 font-bold text-xs">매주 일요일 정기 휴무</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Navigation Links -->
+          <div class="pt-2 grid grid-cols-2 gap-2">
+            <a id="link-naver" href="#" target="_blank" class="flex items-center justify-center gap-1.5 py-2 px-3 border border-slate-200 hover:border-emerald-500 rounded-xl text-xs font-bold text-slate-700 hover:text-emerald-600 transition-all bg-slate-50">
+              <i class="fa-solid fa-location-arrow text-emerald-500"></i> 네이버 검색
+            </a>
+            <a id="link-kakao" href="#" target="_blank" class="flex items-center justify-center gap-1.5 py-2 px-3 border border-slate-200 hover:border-amber-500 rounded-xl text-xs font-bold text-slate-700 hover:text-amber-600 transition-all bg-slate-50">
+              <i class="fa-solid fa-compass text-amber-500"></i> 카카오 맵 검색
+            </a>
+          </div>
+
+          <!-- ✨ AI Chef Interactive Dialogue Board -->
+          <div class="pt-4 border-t border-slate-100 space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5 text-emerald-700">
+                <i class="fa-solid fa-comments text-amber-500 animate-pulse"></i>
+                <h4 class="text-xs font-bold">✨ AI 셰프님과 실시간 톡톡</h4>
+              </div>
+              <span class="text-[9px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">컨텍스트 답변</span>
+            </div>
+            
+            <!-- Chef Profile Bubble -->
+            <div class="bg-emerald-50/55 rounded-xl p-3 border border-emerald-100 flex gap-2.5 items-start">
+              <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-inner font-black text-sm">
+                👨‍🍳
+              </div>
+              <div class="flex-1 space-y-1.5">
+                <p class="text-[10px] font-bold text-emerald-800 leading-none" id="chef-profile-title">상록한정식 AI 점주</p>
+                <div id="chef-response" class="text-xs text-slate-600 leading-relaxed">
+                  "안녕하세요! 저희 가게에 대해 궁금하신 점이 있으시면 언제든지 물어보세요. 비법이나 추천 조합을 알려드립니다!"
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Action Prompts -->
+            <div class="flex flex-wrap gap-1">
+              <button onclick="askChefQuick('이 식당의 최고의 추천 메뉴와 그 비결은 무엇인가요?')" class="px-2 py-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all border border-slate-200">💎 대표 추천요리 물어보기</button>
+              <button onclick="askChefQuick('예약이나 단체 방문하기에 좋은 인원이나 공간 구성을 알려주세요.')" class="px-2 py-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all border border-slate-200">👥 단체 예약 정보</button>
+              <button onclick="askChefQuick('주차 편의나 정기 휴무일, 방문 팁을 사장님 목소리로 친근하게 알려주세요.')" class="px-2 py-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all border border-slate-200">🚗 휴무일/주차 꿀팁</button>
+            </div>
+
+            <!-- Custom User Query to Chef -->
+            <div class="flex gap-1">
+              <input type="text" id="chef-user-input" placeholder="사장님께 직접 물어볼 메시지 입력..." class="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+              <button onclick="askChefCustom()" id="btn-ask-chef" class="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 rounded-xl font-bold transition-all shrink-0">✨ 묻기</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- Preloaded Databases ---
+    const defaultRestaurants = [
+      {
+        name: "상록한정식",
+        desc: "천연감미료를 아낌없이 사용하고 전통 장류와 직접 기른 제철 식재료로 맛을 내 몸이 정갈해지는 대표 웰빙 한정식입니다. 솔향기가 가득한 마당 조경이 손님들을 반겨줍니다.",
+        summary: "전통 방식과 천연 천연 조미료로 수놓은 고급 한정식 명소",
+        phone: "031-500-4455",
+        address: "경기도 안산시 상록구 해안로 705 (사동)",
+        district: "상록구",
+        category: "한식",
+        seats: "140평 대형 한옥 (단체 연회 완비)",
+        parking: "자체 전용 주차장 완비 (대형 버스 10대 가능)",
+        holiday: "설날 및 추석 명절 당일 휴무 / AM 11:30 ~ PM 10:00",
+        lat: 37.2995,
+        lng: 126.8524
+      },
+      {
+        name: "화정동 메밀꽃필무렵",
+        desc: "20년이 넘는 전통을 간직하고 있으며 국내산 메밀만을 사용해 자가제면한 건강식 국수와 메밀 전병을 맛볼 수 있는 명품 한식점입니다. 직접 기른 무와 김치가 감칠맛을 배가시켜 줍니다.",
+        summary: "고즈넉한 한옥에서 자가제면으로 뽑아내는 100% 국산 메밀 전문점",
+        phone: "031-403-0621",
+        address: "경기도 안산시 단원구 꽃우물1길 20 (화정동)",
+        district: "단원구",
+        category: "한식",
+        seats: "25평 아늑한 공간, 약 100석 확보",
+        parking: "가게 전면 전용 주차구역 완비 (무료)",
+        holiday: "연중무휴 영업 / AM 10:00 ~ PM 09:30",
+        lat: 37.3441,
+        lng: 126.8162
+      },
+      {
+        name: "정통일식 다래",
+        desc: "산지에서 직송받는 쫄깃하고 싱싱한 대광어, 참돔을 비롯해 신선도 높은 참치 뱃살 부위를 정갈한 코스 요리로 한자리에서 즐길 수 있어 품격 높은 식사를 보장하는 정통 일식당입니다.",
+        summary: "고품격 비즈니스 모임과 상견례에 특화된 안산 대표 프라이빗 일식당",
+        phone: "031-403-4399",
+        address: "경기도 안산시 단원구 광덕2로 163-15, 301호 (고잔동)",
+        district: "단원구",
+        category: "횟집·일식",
+        seats: "100평 (모든 좌석이 프라이빗 개별 룸으로 구성)",
+        parking: "지하 주차장 입차 후 주차 확인 스탬프 발급",
+        holiday: "매주 일요일 정기 휴무 / AM 11:30 ~ PM 10:00",
+        lat: 37.3115,
+        lng: 126.8282
+      },
+      {
+        name: "꽃피는화덕피자 D500 본점",
+        desc: "이탈리아 화산석 화덕을 공수하여 485도의 고온에서 순식간에 구워내는 나폴리 정통 방식 피자입니다. 쫄깃쫄깃한 화덕 도우의 에어버블과 풍성한 부팔라 치즈의 향미를 느껴보세요.",
+        summary: "이탈리아 참나무 화덕으로 도우의 쫄깃함을 극한으로 끌어올린 피자 맛집",
+        phone: "031-408-4850",
+        address: "경기도 안산시 상록구 본이로 3 (본오동)",
+        district: "상록구",
+        category: "양식",
+        seats: "80석 규모의 개방감 있는 실내 및 오픈 치킨",
+        parking: "매장 뒤편 주차 공간 및 골목 주차 가능",
+        holiday: "매주 월요일 정기휴무 / AM 11:30 ~ PM 09:30",
+        lat: 37.3023,
+        lng: 126.8665
+      },
+      {
+        name: "명장한우",
+        desc: "대한민국 최상급 투플러스(1++) 무항생제 친환경 한우만을 장기간 숙성하여 참숯 불판에 구워내는 정육식당이자 한우 명소입니다. 마블링의 극강 비주얼과 사르르 녹아내리는 육즙이 환상적입니다.",
+        summary: "안산 최고 등급 명품 투플 숙성 한우와 정갈한 수제 갈비",
+        phone: "031-415-0068",
+        address: "경기도 안산시 상록구 광덕1로 346, 301호 (이동)",
+        district: "상록구",
+        category: "한식",
+        seats: "150평 대형 홀, 연회장 등 총 180석 이상 구비",
+        parking: "건물 뒤 30대 이상 주차 가능한 완벽한 주차공간 지원",
+        holiday: "추석/설날 당일 휴무 / AM 11:00 ~ PM 11:00",
+        lat: 37.3101,
+        lng: 126.8431
+      },
+      {
+        name: "본가해미청 선부점",
+        desc: "매콤하면서도 감칠맛을 폭발시키는 양념에 두툼하고 아삭한 콩나물, 그리고 쫄깃하고 부드러운 아구 살이 가득 넘쳐나는 아구찜 및 신선도 높은 꽃게탕을 대접하는 푸짐한 인심의 명소입니다.",
+        summary: "매콤하고 알찬 생 아귀찜과 싱싱한 해물탕의 전설",
+        phone: "031-402-1700",
+        address: "경기도 안산시 단원구 선부광장로 67 (선부동)",
+        district: "단원구",
+        category: "횟집·일식",
+        seats: "150평 규모로 대가족 행사와 단체 회식 거뜬",
+        parking: "선부광장 통합 공영 주차장 2시간 주차 쿠폰 제공",
+        holiday: "연중무휴 상시 운영 / AM 11:00 ~ PM 11:00",
+        lat: 37.3364,
+        lng: 126.8093
+      },
+      {
+        name: "통일칼국수",
+        desc: "20년이 넘는 시간 동안 한자리에서 직접 빚은 고소한 소 만두와 깊고 개운하게 끓여낸 멸치육수 기반의 손칼국수를 고수하고 있는 진정한 노포입니다. 항아리에 담긴 전용 김치가 예술입니다.",
+        summary: "바글바글 끓인 진한 칼국수와 수제 만두로 사랑받는 20년 맛집",
+        phone: "031-495-5904",
+        address: "경기도 안산시 단원구 동산로 63, 502호 (원시동)",
+        district: "단원구",
+        category: "한식",
+        seats: "30평, 테이블 19석 보유",
+        parking: "산업단지 주차 빌딩 60대 이상 무료 주차 완비",
+        holiday: "매주 일요일 정기휴무 / PM 12:00 ~ PM 04:00 (점심 한정)",
+        lat: 37.3012,
+        lng: 126.7905
+      },
+      {
+        name: "안동국밥 월피점",
+        desc: "안동 지방의 따뜻하고 칼칼한 장터국밥 맛을 고스란히 재현했습니다. 부드러운 양지 소고기 편육과 진하고 매콤하게 우려낸 한우 사골 육수가 지친 일상에 최고의 영양을 선물합니다.",
+        summary: "60년 비법 가마솥 육수와 푹 고아 부드러운 우거지 국밥",
+        phone: "031-439-2324",
+        address: "경기도 안산시 상록구 예술광장로 11 (월피동)",
+        district: "상록구",
+        category: "한식",
+        seats: "약 50평 규모 (동시 80명 수용 가능)",
+        parking: "인근 예술광장 도로변 주차구역 및 전용 10대 가능",
+        holiday: "연중무휴 24시간 연중 영업",
+        lat: 37.3292,
+        lng: 126.8441
+      },
+      {
+        name: "이주희 연평도게장",
+        desc: "안산 이동 송호맛길의 자랑거리로, 비린내를 확실하게 잡는 한약재 비법 양념에 연평도에서 통째로 공수해 알이 꽉 차고 탄탄한 꽃게를 담근 프리미엄 간장게장과 양념게장을 제공합니다.",
+        summary: "안산 송호맛길의 랜드마크인 100% 알배기 암꽃게장 명인",
+        phone: "031-418-8831",
+        address: "경기도 안산시 상록구 송호1길 19-1 (이동)",
+        district: "상록구",
+        category: "한식",
+        seats: "총 60석 규모 (입식 및 전용 룸 구비)",
+        parking: "가게 전면 8대 단독 전용 주차 가능 및 골목 주차 용이",
+        holiday: "설날과 추석 당일 및 전날 휴무 / AM 11:00 ~ PM 09:30",
+        lat: 37.3075,
+        lng: 126.8455
+      },
+      {
+        name: "동화루 고잔점",
+        desc: "기름진 중식을 탈피하여 닭 육수와 전복, 낙지를 듬뿍 고아 만든 삼선해물짬뽕과 두툼한 등심을 바로 튀겨 소스를 부어도 끝까지 바삭바삭함을 유지하는 명장 탕수육이 최고 별미입니다.",
+        summary: "전통 수타 기술 and 칼칼한 해물 짬뽕이 명품인 30년 전통 중국집",
+        phone: "031-411-8889",
+        address: "경기도 안산시 단원구 광덕대로 154 (고잔동)",
+        district: "단원구",
+        category: "중식",
+        seats: "80석 규모 (단체 회식용 칸막이 완비 및 단독 연회석)",
+        parking: "매장 건너편 고잔신도시 공영주차장 무료 주차권 1시간 지급",
+        holiday: "매주 화요일 정기휴무 / AM 11:00 ~ PM 09:30",
+        lat: 37.3148,
+        lng: 126.8315
+      },
+      {
+        name: "베이징 불짬뽕",
+        desc: "직화로 고기 야채를 빠르게 볶아내 중독성 강한 불맛의 극치를 자아내는 이색 짬뽕집입니다. 얼큰하고 담백한 육수가 일품으로 해장에 더할 나위 없이 훌륭합니다.",
+        summary: "스트레스를 날리는 시원하고 화끈한 참숯 불맛 불짬뽕 맛집",
+        phone: "031-494-0120",
+        address: "경기도 안산시 단원구 중앙대로 425 (초지동)",
+        district: "단원구",
+        category: "중식",
+        seats: "45석 규모의 원목 테이블 인테리어",
+        parking: "상가 복합 주차장 무료 등록 1시간 30분 가능",
+        holiday: "매주 월요일 정기휴무 / AM 10:30 ~ PM 09:00",
+        lat: 37.3190,
+        lng: 126.8080
+      },
+      {
+        name: "그남자의 이태리식당",
+        desc: "파스타 생면과 프리미엄 올리브 오일을 조합해 진정한 정통 양식 스타일의 진수를 선보이는 라운지 카페 레스토랑입니다. 연인과의 특별한 기념일에 안성맞춤인 와인셀러를 가득 채워두었습니다.",
+        summary: "감각적인 재즈 음악과 호텔 셰프 출신의 고급 이태리 다이닝",
+        phone: "031-503-3355",
+        address: "경기도 안산시 단원구 고잔1길 40 601호",
+        district: "단원구",
+        category: "양식",
+        seats: "60석 및 루프탑 테라스 야외 정원 좌석 포함",
+        parking: "건물 내 전용 기계식 및 야외 제휴 주차장 주차 도장 제공",
+        holiday: "매주 월요일 정기휴무 / AM 11:30 ~ PM 10:00",
+        lat: 37.3188,
+        lng: 126.8362
+      },
+      {
+        name: "대부도 어부나라",
+        desc: "바다의 정취를 가득 담은 싱싱한 바지락과 제철 굴을 가득 얹어 끓여낸 정통 대부도식 손칼국수 맛집입니다. 크고 바삭해 낙지 한 마리가 통째로 들어가는 해물파전은 필수로 맛보아야 합니다.",
+        summary: "대부도 황금 해안을 감상하며 맛보는 산더미 바지락 칼국수",
+        phone: "031-886-3333",
+        address: "경기도 안산시 단원구 대부황금로 1420 (대부동)",
+        district: "단원구",
+        category: "횟집·일식",
+        seats: "120석 대규모 실내 및 야외 바다 전망 테라스 석",
+        parking: "매우 넓은 자갈밭 단독 야외 전용 주차장 (대형 버스 30대 가능)",
+        holiday: "연중무휴 운영 / AM 09:30 ~ PM 09:00",
+        lat: 37.2588,
+        lng: 126.5982
+      },
+      {
+        name: "초지참숯불갈비",
+        desc: "수제로 칼집을 넣은 뒤 비법 수제 소스에 정성껏 숙성시켜 참숯불 위에 직원이 하나하나 최고의 솜씨로 그을리듯 구워 드리는 고기구이 전문점입니다. 명이나물과 궁합이 환상적입니다.",
+        summary: "한결같은 부드러움과 육즙 가득한 100% 수제 돼지갈비 전문점",
+        phone: "031-408-9325",
+        address: "경기도 안산시 상록구 석호로 177 (본오동)",
+        district: "상록구",
+        category: "한식",
+        seats: "총 100석 (환기 시스템이 잘 갖춰진 넓고 청결한 매장)",
+        parking: "가게 앞 공영 노상 주차장 이용 용이",
+        holiday: "매주 월요일 정기휴무 / AM 11:30 ~ PM 10:30",
+        lat: 37.2952,
+        lng: 126.8580
+      }
+    ];
+
+    // --- Geocoding Solver Fallbacks for Raw CSV Data ---
+    const ansanDongCoordinates = {
+      "고잔동": { lat: 37.3151, lng: 126.8294 },
+      "중앙동": { lat: 37.3195, lng: 126.8385 },
+      "호수동": { lat: 37.3050, lng: 126.8250 },
+      "사동": { lat: 37.2950, lng: 126.8450 },
+      "이동": { lat: 37.3090, lng: 126.8500 },
+      "일동": { lat: 37.3120, lng: 126.8680 },
+      "본오동": { lat: 37.3023, lng: 126.8665 },
+      "부곡동": { lat: 37.3320, lng: 126.8600 },
+      "월피동": { lat: 37.3292, lng: 126.8441 },
+      "성포동": { lat: 37.3255, lng: 126.8505 },
+      "와동": { lat: 37.3350, lng: 126.8250 },
+      "선부동": { lat: 37.3364, lng: 126.8093 },
+      "원곡동": { lat: 37.3240, lng: 126.7910 },
+      "초지동": { lat: 37.3060, lng: 126.8050 },
+      "백운동": { lat: 37.3180, lng: 126.7980 },
+      "신길동": { lat: 37.3320, lng: 126.7770 },
+      "대부동": { lat: 37.2588, lng: 126.5982 },
+      "대부북동": { lat: 37.2750, lng: 126.5900 },
+      "대부남동": { lat: 37.2280, lng: 126.6150 },
+      "대부동동": { lat: 37.2510, lng: 126.6380 },
+      "건건동": { lat: 37.3100, lng: 126.9050 },
+      "사사동": { lat: 37.3080, lng: 126.9250 },
+      "팔곡동": { lat: 37.2980, lng: 126.8980 },
+      "화정동": { lat: 37.3441, lng: 126.8162 },
+      "양상동": { lat: 37.3480, lng: 126.8650 },
+      "수암동": { lat: 37.3600, lng: 126.8850 },
+      "장상동": { lat: 37.3650, lng: 126.8700 },
+      "원시동": { lat: 37.3012, lng: 126.7905 },
+      "목내동": { lat: 37.2850, lng: 126.7800 },
+      "성곡동": { lat: 37.2800, lng: 126.7550 }
+    };
+
+    // --- State Variables ---
+    let allRestaurants = [...defaultRestaurants];
+    let filteredRestaurants = [...defaultRestaurants];
+    let activeRegion = "all";
+    let activeCategory = "all";
+    let searchQuery = "";
+    let selectedRestaurant = null; // Currently opened restaurant object
+    
+    let map;
+    let markersLayer;
+
+    // --- Initialize Application on Window Load ---
+    window.onload = function() {
+      initMap();
+      loadRestaurants();
+      setupEventListeners();
+      showToast("안산시 생생 맛집 지도가 정상 작동 중입니다!", "check", "emerald");
+    };
+
+    // --- Initialize Leaflet Map ---
+    function initMap() {
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([37.3218778, 126.8308899], 13);
+
+      L.control.zoom({
+        position: 'bottomright'
+      }).addTo(map);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19
+      }).addTo(map);
+
+      markersLayer = L.layerGroup().addTo(map);
+    }
+
+    // --- Quick Coordinate Panning ---
+    function panToAnsan() { map.setView([37.3218778, 126.8308899], 13); }
+    function panToDanwon() { map.setView([37.3255, 126.8055], 13); }
+    function panToSangrok() { map.setView([37.3110, 126.8580], 13); }
+    function panToDaebudo() { map.setView([37.2588, 126.5982], 12); }
+
+    // --- Helper mapping colors ---
+    function getCategoryColor(cat) {
+      switch(cat) {
+        case "한식": return "rose";
+        case "양식": return "blue";
+        case "중식": return "purple";
+        case "횟집·일식": return "teal";
+        default: return "amber";
+      }
+    }
+
+    function getCategoryEmoji(cat) {
+      switch(cat) {
+        case "한식": return "🔥";
+        case "양식": return "🍕";
+        case "중식": return "🍜";
+        case "횟집·일식": return "🍣";
+        default: return "☕";
+      }
+    }
+
+    // --- Build / Reload Markers and Sidebar Items ---
+    function loadRestaurants() {
+      markersLayer.clearLayers();
+      const listContainer = document.getElementById("restaurant-list");
+      listContainer.innerHTML = "";
+
+      // Apply Filters
+      filteredRestaurants = allRestaurants.filter(item => {
+        const matchRegion = (activeRegion === "all") || (item.district === activeRegion);
+        const matchCategory = (activeCategory === "all") || (item.category === activeCategory);
+        
+        const query = searchQuery.trim().toLowerCase();
+        const matchSearch = !query || 
+          (item.name && item.name.toLowerCase().includes(query)) ||
+          (item.desc && item.desc.toLowerCase().includes(query)) ||
+          (item.address && item.address.toLowerCase().includes(query));
+
+        return matchRegion && matchCategory && matchSearch;
+      });
+
+      document.getElementById("filtered-count").innerText = filteredRestaurants.length;
+      updateHeaderStats();
+
+      if (filteredRestaurants.length === 0) {
+        listContainer.innerHTML = `
+          <div class="p-8 text-center text-slate-400">
+            <i class="fa-regular fa-folder-open text-4xl mb-3 block text-slate-300"></i>
+            <p class="text-sm font-bold">일치하는 식당이 없습니다.</p>
+            <p class="text-xs text-slate-400 mt-1">필터를 조정하거나 다른 키워드를 검색해보세요.</p>
+          </div>
+        `;
+        return;
+      }
+
+      filteredRestaurants.forEach((rest, index) => {
+        const color = getCategoryColor(rest.category);
+        const emoji = getCategoryEmoji(rest.category);
+
+        const markerHtml = `
+          <div class="flex items-center justify-center">
+            <div class="relative w-8 h-8 flex items-center justify-center">
+              <div class="absolute w-full h-full rounded-full bg-${color}-500 opacity-20 animate-ping"></div>
+              <div class="w-6.5 h-6.5 rounded-full bg-${color}-600 border-2 border-white flex items-center justify-center shadow-md text-white text-[10px] select-none">
+                ${emoji}
+              </div>
+            </div>
+          </div>
+        `;
+
+        const customIcon = L.divIcon({
+          html: markerHtml,
+          className: 'custom-div-icon',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14]
+        });
+
+        const marker = L.marker([rest.lat, rest.lng], { icon: customIcon }).addTo(markersLayer);
+        
+        const popupContent = `
+          <div class="p-2 max-w-[200px]">
+            <p class="text-[10px] font-bold text-${color}-600 mb-0.5 uppercase tracking-wide">${rest.category} • ${rest.district}</p>
+            <h4 class="font-bold text-slate-900 text-sm leading-tight">${rest.name}</h4>
+            <p class="text-[11px] text-slate-500 line-clamp-2 mt-1">${rest.summary || rest.desc}</p>
+            <button onclick="openDetailByIndex(${index})" class="mt-2 w-full text-center bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-[10px] py-1 rounded-md transition-all">상세보기 <i class="fa-solid fa-angle-right"></i></button>
+          </div>
+        `;
+        
+        marker.bindPopup(popupContent);
+        rest._marker = marker;
+
+        const listItem = document.createElement("div");
+        listItem.className = `p-4 hover:bg-slate-50 border-b border-slate-100 transition-all cursor-pointer group flex items-start gap-3.5`;
+        listItem.onclick = () => selectRestaurant(rest);
+        
+        listItem.innerHTML = `
+          <div class="w-9 h-9 rounded-xl bg-${color}-50 text-${color}-600 flex items-center justify-center shrink-0 font-bold group-hover:scale-105 transition-transform">
+            ${emoji}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between mb-0.5">
+              <span class="text-[10px] font-bold text-${color}-600 bg-${color}-50 px-1.5 py-0.5 rounded">${rest.category}</span>
+              <span class="text-[10px] font-semibold text-slate-400">${rest.district}</span>
+            </div>
+            <h4 class="font-extrabold text-sm text-slate-800 group-hover:text-emerald-600 transition-colors truncate">${rest.name}</h4>
+            <p class="text-xs text-slate-400 truncate mt-0.5">${rest.summary || rest.desc}</p>
+            <div class="flex items-center gap-2 mt-2 text-[10px] font-medium text-slate-500">
+              <span class="truncate"><i class="fa-solid fa-map-pin text-slate-400 mr-0.5"></i> ${rest.address}</span>
+            </div>
+          </div>
+        `;
+        
+        listContainer.appendChild(listItem);
+      });
+    }
+
+    // --- Action when a Restaurant is Selected ---
+    function selectRestaurant(rest) {
+      if (rest.lat && rest.lng) {
+        map.setView([rest.lat - 0.002, rest.lng], 15);
+        rest._marker.openPopup();
+        populateDetailDrawer(rest);
+      }
+    }
+
+    window.openDetailByIndex = function(index) {
+      const rest = filteredRestaurants[index];
+      if (rest) {
+        populateDetailDrawer(rest);
+      }
+    };
+
+    // --- Populate Details ---
+    function populateDetailDrawer(rest) {
+      selectedRestaurant = rest;
+      const color = getCategoryColor(rest.category);
+      const categoryTag = document.getElementById("detail-category");
+      
+      categoryTag.className = `text-slate-900 text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider bg-${color}-400`;
+      categoryTag.innerText = rest.category;
+
+      document.getElementById("detail-district").innerText = rest.district;
+      document.getElementById("detail-name").innerText = rest.name;
+      document.getElementById("detail-summary").innerText = rest.summary || "안산시 공인 생생 명인 맛집입니다.";
+      document.getElementById("detail-desc").innerText = rest.desc || "우수한 먹거리로 조리하는 웰빙 맛집입니다.";
+      
+      const phoneElem = document.getElementById("detail-phone");
+      phoneElem.innerText = rest.phone || "전화번호 미등록";
+      phoneElem.href = rest.phone ? `tel:${rest.phone}` : "#";
+
+      document.getElementById("detail-address").innerText = rest.address;
+      document.getElementById("detail-seats").innerText = rest.seats || "정보가 없습니다";
+      document.getElementById("detail-parking").innerText = rest.parking || "정보가 없습니다";
+      document.getElementById("detail-holiday").innerText = rest.holiday || "정보가 없습니다";
+
+      document.getElementById("link-naver").href = `https://search.naver.com/search.naver?query=${encodeURIComponent("안산 " + rest.name + " " + rest.address)}`;
+      document.getElementById("link-kakao").href = `https://map.kakao.com/?q=${encodeURIComponent("안산 " + rest.name)}`;
+
+      // Reset AI Chef Response
+      document.getElementById("chef-profile-title").innerText = `${rest.name} AI 셰프`;
+      document.getElementById("chef-response").innerText = `반갑습니다! 안산의 자랑인 저희 "${rest.name}" 에 대해 어떤 점이든 편하게 여쭤보세요! 맛과 정성에 대해 셰프의 목소리로 대답해 드립니다. ✨`;
+      document.getElementById("chef-user-input").value = "";
+
+      const drawer = document.getElementById("detail-drawer");
+      drawer.classList.remove("translate-y-10", "opacity-0", "pointer-events-none");
+    }
+
+    function closeDetailDrawer() {
+      selectedRestaurant = null;
+      const drawer = document.getElementById("detail-drawer");
+      drawer.classList.add("translate-y-10", "opacity-0", "pointer-events-none");
+    }
+
+    window.copyAddress = function() {
+      const addressText = document.getElementById("detail-address").innerText;
+      const tempInput = document.createElement("input");
+      tempInput.value = addressText;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand("copy");
+      document.body.removeChild(tempInput);
+      showToast("식당 주소가 클립보드에 복사되었습니다!", "copy", "emerald");
+    };
+
+    // --- Gemini API Call with Exponential Backoff ---
+    async function callGemini(prompt, systemInstruction = "") {
+      const apiKey = ""; // Runtime automatically provisions this key
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }]
+      };
+      if (systemInstruction) {
+        payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+      }
+
+      let delay = 1000;
+      for (let i = 0; i < 5; i++) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (response.ok) {
+            const result = await response.json();
+            return result.candidates?.[0]?.content?.parts?.[0]?.text || "답변을 추출할 수 없습니다.";
+          }
+        } catch (error) {
+          // No log retries in console as per prompt guardrails
+        }
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2;
+      }
+      throw new Error("서버 연결에 여러 차례 실패했습니다. 네트워크 상태나 API 정원을 확인해주세요.");
+    }
+
+    // --- ✨ AI Course Generator Magic ---
+    async function generateAICourse() {
+      const companion = document.getElementById("ai-companion").value;
+      const theme = document.getElementById("ai-theme").value;
+      
+      // Select 3 or 4 restaurants from filtered list as raw material for course creation
+      const candidateRestaurants = filteredRestaurants.slice(0, 7).map(r => ({
+        이름: r.name,
+        위치: r.address,
+        지역: r.district,
+        분류: r.category,
+        요약: r.summary || r.desc
+      }));
+
+      if (candidateRestaurants.length === 0) {
+        showToast("현재 조건에 부합하는 식당 데이터가 없습니다.", "triangle-exclamation", "amber");
+        return;
+      }
+
+      // Prepare Course Modal
+      const modal = document.getElementById("ai-course-modal");
+      const contentElem = document.getElementById("ai-course-content");
+      const subtitleElem = document.getElementById("ai-course-subtitle");
+
+      subtitleElem.innerText = `${companion}을(를) 위한 ${theme} 코스`;
+      contentElem.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12 text-center space-y-3">
+          <i class="fa-solid fa-wand-magic-sparkles text-4xl text-emerald-600 animate-spin"></i>
+          <p class="font-bold text-slate-700">Gemini AI 미식 동선 설계 중...</p>
+          <p class="text-xs text-slate-400">안산시 지리를 고려한 최적의 맛집 결합 코스를 구상하고 있습니다.</p>
+        </div>
+      `;
+      modal.classList.remove("hidden");
+
+      // System Prompt & Prompt Construction
+      const systemInstruction = "당신은 경기도 안산시 공식 관광&미식 홍보대사입니다. 제공된 실제 안산시 맛집 리스트를 활용하여, 요청자의 동반자와 테마에 완벽히 매칭되는 반나절 또는 하루 맛집 여행 코스(2~3곳 연계)를 만들어 줍니다. 코스는 가상의 동선을 포함해 친근하게 존댓말로 작성해 주세요. 지리적 위치가 대부도인지 도심(단원구/상록구)인지 구별하여 설명해 주세요.";
+      
+      const prompt = `
+        요청 정보:
+        - 동반자 구성: ${companion}
+        - 원하는 투어 테마: ${theme}
+        
+        선택 가능한 안산 생생 맛집 정보 리스트:
+        ${JSON.stringify(candidateRestaurants, null, 2)}
+        
+        위 목록 중 가장 적합한 2~3개 식당을 뽑아서 어울리는 매끄러운 미식 여행 코스를 코스 순서대로 가이드해 주세요.
+        각 코스별로 왜 이 동반자와 테마에 좋은지 한줄 가이드를 달아주고, 마지막에는 안산시에서 함께 들르면 좋을 만한 명소(예: 안산 갈대습지공원, 대부도 바다, 다문화거리, 시화나래전망대 등)도 1개 어울리게 추천해 주세요. 마크다운 포맷팅을 깔끔하게 사용하여 읽기 쉽게 출력해 주세요.
+      `;
+
+      try {
+        const aiText = await callGemini(prompt, systemInstruction);
+        // Replace markdown-style headings with beautiful custom tailwind styling
+        const formattedText = aiText
+          .replace(/\n/g, '<br>')
+          .replace(/### (.*?)(<br>|$)/g, '<h4 class="font-black text-emerald-800 text-sm mt-3 mb-1 border-b pb-0.5 flex items-center gap-1.5">📌 $1</h4>')
+          .replace(/## (.*?)(<br>|$)/g, '<h3 class="font-bold text-slate-900 text-base mt-4 mb-2">$1</h3>')
+          .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-700 font-extrabold">$1</strong>')
+          .replace(/- /g, '• ');
+
+        contentElem.innerHTML = `
+          <div class="prose prose-emerald text-xs max-w-none">
+            ${formattedText}
+          </div>
+        `;
+      } catch (err) {
+        contentElem.innerHTML = `
+          <div class="text-center py-8 text-rose-500 space-y-2">
+            <i class="fa-solid fa-circle-exclamation text-3xl"></i>
+            <p class="font-bold">코스 생성에 실패했습니다.</p>
+            <p class="text-xs text-slate-400">${err.message}</p>
+            <button onclick="generateAICourse()" class="mt-4 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs">다시 시도</button>
+          </div>
+        `;
+      }
+    }
+
+    window.closeCourseModal = function() {
+      document.getElementById("ai-course-modal").classList.add("hidden");
+    };
+
+    // --- ✨ AI Chef Talk Magic ---
+    async function askChef(question) {
+      if (!selectedRestaurant) return;
+
+      const chefResponseArea = document.getElementById("chef-response");
+      const originalText = chefResponseArea.innerHTML;
+      
+      chefResponseArea.innerHTML = `
+        <div class="flex items-center gap-2 text-slate-400 text-[11px] font-semibold">
+          <i class="fa-solid fa-spinner animate-spin text-emerald-600"></i> 셰프님이 답변을 준비하는 중...
+        </div>
+      `;
+
+      const systemInstruction = `당신은 안산시 생생맛집 리스트에 등록된 "${selectedRestaurant.name}"의 친절하고 자부심 넘치는 한국인 사장님이자 전문 주방장(셰프)입니다. 
+가게 정보(주소: ${selectedRestaurant.address}, 분류: ${selectedRestaurant.category}, 설명: ${selectedRestaurant.desc}, 좌석수: ${selectedRestaurant.seats}, 주차: ${selectedRestaurant.parking}, 휴무: ${selectedRestaurant.holiday})를 완전히 숙지하고, 이 정보에만 근거하여 손님의 질문에 자부심 있고 상냥한 목소리로 대답해야 합니다. 
+손님에게 '반갑습니다 손님!', '저희 ${selectedRestaurant.name}에서는요~'와 같은 실감 나는 점포 사장님의 말투를 사용해 한국어 2~3줄 내외로 활기차게 답변해 주세요. 정성스럽게 수제 요리를 한다는 점을 어필하세요.`;
+
+      try {
+        const responseText = await callGemini(question, systemInstruction);
+        chefResponseArea.innerText = responseText;
+      } catch (err) {
+        chefResponseArea.innerHTML = `<span class="text-rose-500 text-[11px]"><i class="fa-solid fa-circle-exclamation"></i> 셰프님이 요리 중이라 바쁘신 것 같습니다. 잠시 후 다시 질문해 주세요!</span>`;
+      }
+    }
+
+    window.askChefQuick = function(promptText) {
+      askChef(promptText);
+    };
+
+    window.askChefCustom = function() {
+      const input = document.getElementById("chef-user-input");
+      const question = input.value.trim();
+      if (!question) {
+        showToast("셰프님께 물어볼 질문 내용을 입력해 주세요.", "pen", "amber");
+        return;
+      }
+      askChef(question);
+      input.value = "";
+    };
+
+    // --- Filter Handlers ---
+    window.filterRegion = function(region) {
+      activeRegion = region;
+      document.querySelectorAll(".filter-region-btn").forEach(btn => {
+        btn.className = "filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all";
+      });
+
+      if (region === 'all') {
+        document.getElementById("btn-region-all").className = "filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white border border-emerald-600 shadow-sm transition-all";
+      } else if (region === '단원구') {
+        document.getElementById("btn-region-danwon").className = "filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white border border-emerald-600 shadow-sm transition-all";
+      } else if (region === '상록구') {
+        document.getElementById("btn-region-sangrok").className = "filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white border border-emerald-600 shadow-sm transition-all";
+      }
+
+      loadRestaurants();
+      closeDetailDrawer();
+    };
+
+    window.filterCategory = function(category) {
+      activeCategory = category;
+      document.querySelectorAll(".filter-cat-btn").forEach(btn => {
+        const catValue = btn.getAttribute("data-cat");
+        if (catValue === category) {
+          btn.className = "filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-800 text-white transition-all shadow-sm";
+        } else {
+          btn.className = "filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all";
+        }
+      });
+
+      loadRestaurants();
+      closeDetailDrawer();
+    };
+
+    window.resetAllFilters = function() {
+      activeRegion = "all";
+      activeCategory = "all";
+      searchQuery = "";
+      document.getElementById("search-input").value = "";
+      
+      document.querySelectorAll(".filter-region-btn").forEach(btn => {
+        btn.className = "filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all";
+      });
+      document.getElementById("btn-region-all").className = "filter-region-btn px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white border border-emerald-600 shadow-sm transition-all";
+
+      document.querySelectorAll(".filter-cat-btn").forEach(btn => {
+        const catValue = btn.getAttribute("data-cat");
+        if (catValue === "all") {
+          btn.className = "filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-800 text-white transition-all shadow-sm";
+        } else {
+          btn.className = "filter-cat-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all";
+        }
+      });
+
+      loadRestaurants();
+      closeDetailDrawer();
+      panToAnsan();
+      showToast("모든 검색 및 필터 옵션이 초기화되었습니다.", "rotate-left", "teal");
+    };
+
+    // --- Search input listener ---
+    function setupEventListeners() {
+      document.getElementById("search-input").addEventListener("input", function(e) {
+        searchQuery = e.target.value;
+        loadRestaurants();
+      });
+
+      // Enter key for custom chef talk
+      document.getElementById("chef-user-input").addEventListener("keypress", function(e) {
+        if (e.key === 'Enter') {
+          askChefCustom();
+        }
+      });
+
+      // Drag and Drop Zone setup for file upload
+      const dropZone = document.getElementById("drop-zone");
+      const fileInput = document.getElementById("csv-file-input");
+
+      fileInput.addEventListener("change", handleFileSelect, false);
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+      });
+
+      function highlight(e) {
+        e.preventDefault();
+        dropZone.classList.add('border-amber-500', 'bg-amber-50/50');
+      }
+
+      function unhighlight(e) {
+        e.preventDefault();
+        dropZone.classList.remove('border-amber-500', 'bg-amber-50/50');
+      }
+
+      dropZone.addEventListener('drop', handleDrop, false);
+
+      function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+          fileInput.files = files;
+          processCSVFile(files[0]);
+        }
+      }
+    }
+
+    function handleFileSelect(e) {
+      const files = e.target.files;
+      if (files.length > 0) {
+        processCSVFile(files[0]);
+      }
+    }
+
+    // --- CSV File Processing Logic ---
+    function processCSVFile(file) {
+      if (!file.name.endsWith('.csv')) {
+        showToast("오류: 올바른 형식의 .csv 파일을 업로드해 주세요.", "circle-exclamation", "rose");
+        return;
+      }
+
+      showToast("CSV 분석 시작... 잠시만 기다려주세요.", "hourglass-start", "amber");
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          const rows = results.data;
+          if (rows.length === 0) {
+            showToast("CSV 파일에 읽을 수 있는 데이터가 없습니다.", "circle-exclamation", "rose");
+            return;
+          }
+
+          const parsedRestaurants = [];
+          let successCount = 0;
+
+          rows.forEach((row) => {
+            const name = row['식당이름'] || row['식당 이름'] || row['업소명'] || row['상호명'] || row['식당명'] || row['지정식당명'];
+            const address = row['소재지주소'] || row['소재지 주소'] || row['주소지'] || row['주소'] || row['도로명주소'] || row['도로명전체주소'];
+            const phone = row['전화번호'] || row['연락처'] || row['전화 번호'] || row['전화'];
+            let category = row['음식 분류'] || row['음식분류'] || row['분류'] || row['업태'] || row['업태명'] || row['분류명'];
+            const desc = row['식당설명'] || row['식당 설명'] || row['설명'] || row['특징'] || row['요약 소개 문구'] || row['소개'] || row['주메뉴'];
+            const seats = row['좌석'] || row['좌석 수'] || row['좌석수'] || row['좌석규모'];
+            const parking = row['주차'] || row['주차 정보'] || row['주차정보'] || row['주차장여부'];
+            const holiday = row['휴무일'] || row['휴무'] || row['정기휴무일'] || row['영업시간'];
+
+            if (!name || !address) return; // Skip invalid
+
+            category = category || "기타";
+            let normCategory = "기타";
+            if (category.includes("한식") || category.includes("밥집") || category.includes("고기") || category.includes("구이") || category.includes("국밥") || category.includes("식사")) {
+              normCategory = "한식";
+            } else if (category.includes("양식") || category.includes("피자") || category.includes("파스타") || category.includes("경양식")) {
+              normCategory = "양식";
+            } else if (category.includes("중식") || category.includes("중국") || category.includes("중화")) {
+              normCategory = "중식";
+            } else if (category.includes("회") || category.includes("횟집") || category.includes("일식") || category.includes("스시") || category.includes("해물") || category.includes("초밥")) {
+              normCategory = "횟집·일식";
+            }
+
+            let district = "단원구";
+            if (address.includes("상록구")) {
+              district = "상록구";
+            }
+
+            let coordinates = solveAnsanGeocoding(address);
+
+            parsedRestaurants.push({
+              name: name.trim(),
+              desc: desc ? desc.trim() : "안산시 공인 생생 명인 맛집입니다.",
+              summary: desc ? (desc.substring(0, 50) + (desc.length > 50 ? "..." : "")) : "안산시 공식 지정 생생 맛집",
+              phone: phone ? phone.trim() : "정보 없음",
+              address: address.trim(),
+              district: district,
+              category: normCategory,
+              seats: seats ? seats.trim() : "정보 없음",
+              parking: parking ? parking.trim() : "정보 없음",
+              holiday: holiday ? holiday.trim() : "정보 없음",
+              lat: coordinates.lat,
+              lng: coordinates.lng
+            });
+            successCount++;
+          });
+
+          if (parsedRestaurants.length > 0) {
+            allRestaurants = parsedRestaurants;
+            loadRestaurants();
+            closeDetailDrawer();
+            panToAnsan();
+            showToast(`${successCount}개의 안산시 생생맛집 데이터를 로드했습니다!`, "file-import", "emerald");
+          } else {
+            showToast("매핑된 데이터 필드가 없습니다. 컬럼명을 확인해 주세요.", "circle-exclamation", "rose");
+          }
+        },
+        error: function(err) {
+          showToast("파일 분석 중 오류가 발생했습니다: " + err, "circle-exclamation", "rose");
+        }
+      });
+    }
+
+    // --- Dynamic Neighborhood Geocoding Algorithm with Jitter ---
+    function solveAnsanGeocoding(address) {
+      let baseLat = 37.3218778;
+      let baseLng = 126.8308899;
+
+      for (const [dong, coords] of Object.entries(ansanDongCoordinates)) {
+        if (address.includes(dong)) {
+          baseLat = coords.lat;
+          baseLng = coords.lng;
+          break;
+        }
+      }
+
+      // Add slight jitter to avoid overlapping coordinates on identical dongs
+      const jitterLat = (Math.random() - 0.5) * 0.007;
+      const jitterLng = (Math.random() - 0.5) * 0.007;
+
+      return {
+        lat: baseLat + jitterLat,
+        lng: baseLng + jitterLng
+      };
+    }
+
+    // --- Header Metrics Updater ---
+    function updateHeaderStats() {
+      const total = allRestaurants.length;
+      const danwon = allRestaurants.filter(r => r.district === "단원구").length;
+      const sangrok = allRestaurants.filter(r => r.district === "상록구").length;
+
+      document.getElementById("stat-total").innerText = `${total}개`;
+      document.getElementById("stat-danwon").innerText = `${danwon}개`;
+      document.getElementById("stat-sangrok").innerText = `${sangrok}개`;
+    }
+
+    // --- Non-blocking Toast Alerts ---
+    function showToast(message, icon, colorTheme) {
+      const toast = document.getElementById("custom-toast");
+      const iconBg = document.getElementById("toast-icon-bg");
+      const iconElem = document.getElementById("toast-icon");
+      const msgElem = document.getElementById("toast-msg");
+
+      iconElem.className = `fa-solid fa-${icon}`;
+      iconBg.className = `p-1.5 rounded-lg bg-${colorTheme}-500 text-white`;
+      msgElem.innerText = message;
+
+      toast.classList.remove("translate-y-10", "opacity-0", "pointer-events-none");
+      toast.classList.add("translate-y-0", "opacity-100");
+
+      setTimeout(() => {
+        toast.classList.remove("translate-y-0", "opacity-100");
+        toast.classList.add("translate-y-10", "opacity-0", "pointer-events-none");
+      }, 4000);
+    }
+  </script>
+</body>
+</html>
